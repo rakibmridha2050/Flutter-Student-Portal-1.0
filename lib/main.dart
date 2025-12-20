@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:schoolportal/screens/grades_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/exam_screen.dart';
 import 'screens/fees_screen.dart';
@@ -77,3 +78,21 @@ class _CollegeERPAppState extends State<CollegeERPApp> {
     );
   }
 }
+
+
+// Add this to your main.dart or before navigating
+class MockUser {
+  static void setAsStudent() {
+    CurrentUser.role = 'student';
+    CurrentUser.name = 'John Doe';
+    CurrentUser.id = 1; // Student ID from your database
+  }
+  
+  static void setAsInstructor() {
+    CurrentUser.role = 'instructor';
+    CurrentUser.name = 'Dr. Smith'; // Must match instructor name in courses table
+    CurrentUser.id = 101;
+  }
+}
+
+

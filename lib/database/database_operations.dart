@@ -200,23 +200,29 @@ class DatabaseOperations {
     final db = await _dbHelper.database;
     final List<Map<String, dynamic>> maps = await db.rawQuery('''
       SELECT 
+        g.id,
+        g.enrollment_id,
         g.marks,
         g.grade,
         g.semester,
+        g.created_at,
         c.title as course_title,
         c.course_code,
         c.credits
       FROM grades g
       JOIN courses c ON g.course_id = c.id
       WHERE g.student_id = ?
-      ORDER BY g.semester DESC
+      ORDER BY g.semester DESC, g.created_at DESC
     ''', [studentId]);
     
     return maps.map((map) {
       return {
+        'id': _safeCast<int>(map['id'], 0),
+        'enrollment_id': _safeCast<int>(map['enrollment_id'], 0),
         'marks': _safeCast<double>(map['marks'], 0.0),
         'grade': _safeCast<String>(map['grade'], ''),
         'semester': _safeCast<String>(map['semester'], ''),
+        'created_at': _safeCast<String>(map['created_at'], ''),
         'course_title': _safeCast<String>(map['course_title'], ''),
         'course_code': _safeCast<String>(map['course_code'], ''),
         'credits': _safeCast<int>(map['credits'], 0),
@@ -237,6 +243,21 @@ class DatabaseOperations {
     return null;
   }
 
+  Future<Map<String, dynamic>?> getGradeById(int gradeId) async {
+    final db = await _dbHelper.database;
+    final maps = await db.rawQuery('''
+      SELECT g.*, s.name as student_name, c.title as course_title
+      FROM grades g
+      JOIN students s ON g.student_id = s.id
+      JOIN courses c ON g.course_id = c.id
+      WHERE g.id = ?
+    ''', [gradeId]);
+    if (maps.isNotEmpty) {
+      return maps.first;
+    }
+    return null;
+  }
+
   Future<int> updateGrade(Grade grade) async {
     final db = await _dbHelper.database;
     return await db.update(
@@ -245,6 +266,58 @@ class DatabaseOperations {
       where: 'id = ?',
       whereArgs: [grade.id],
     );
+  }
+
+  Future<int> deleteGrade(int gradeId) async {
+    final db = await _dbHelper.database;
+    
+    try {
+      // First, get the grade to retrieve enrollment_id
+      final grade = await getGradeById(gradeId);
+      if (grade == null) {
+        throw Exception('Grade not found');
+      }
+      
+      final enrollmentId = grade['enrollment_id'] as int?;
+      
+      // Delete the grade
+      final result = await db.delete(
+        'grades',
+        where: 'id = ?',
+        whereArgs: [gradeId],
+      );
+      
+      // If grade was deleted and we have enrollment_id, update enrollment status
+      if (result > 0 && enrollmentId != null) {
+        await updateEnrollmentStatus(enrollmentId, 'enrolled');
+      }
+      
+      return result;
+    } catch (e) {
+      print('Error deleting grade: $e');
+      rethrow;
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> getAllGradesWithDetails() async {
+    final db = await _dbHelper.database;
+    return await db.rawQuery('''
+      SELECT 
+        g.id,
+        g.marks,
+        g.grade,
+        g.semester,
+        g.created_at,
+        s.name as student_name,
+        s.student_id as student_code,
+        c.title as course_title,
+        c.course_code,
+        c.credits
+      FROM grades g
+      JOIN students s ON g.student_id = s.id
+      JOIN courses c ON g.course_id = c.id
+      ORDER BY g.created_at DESC
+    ''');
   }
 
   // ================================
@@ -563,6 +636,71 @@ class DatabaseOperations {
     ''', [studentId]);
     
     return List.generate(maps.length, (i) => Course.fromMap(maps[i]));
+  }
+
+  // Get semester-wise grades for a student
+  Future<Map<String, List<Map<String, dynamic>>>> getGradesBySemester(int studentId) async {
+    final db = await _dbHelper.database;
+    final List<Map<String, dynamic>> maps = await db.rawQuery('''
+      SELECT 
+        g.semester,
+        c.title,
+        g.marks,
+        g.grade,
+        c.credits
+      FROM grades g
+      JOIN courses c ON g.course_id = c.id
+      WHERE g.student_id = ?
+      ORDER BY g.semester DESC, c.title ASC
+    ''', [studentId]);
+    
+    Map<String, List<Map<String, dynamic>>> result = {};
+    
+    for (var map in maps) {
+      final semester = _safeCast<String>(map['semester'], 'Unknown');
+      if (!result.containsKey(semester)) {
+        result[semester] = [];
+      }
+      result[semester]!.add({
+        'title': _safeCast<String>(map['title'], ''),
+        'marks': _safeCast<double>(map['marks'], 0.0),
+        'grade': _safeCast<String>(map['grade'], ''),
+        'credits': _safeCast<int>(map['credits'], 0),
+      });
+    }
+    
+    return result;
+  }
+
+  // Get grade distribution for all courses
+  Future<Map<String, Map<String, int>>> getGradeDistribution() async {
+    final db = await _dbHelper.database;
+    final List<Map<String, dynamic>> maps = await db.rawQuery('''
+      SELECT 
+        c.course_code,
+        c.title,
+        g.grade,
+        COUNT(*) as count
+      FROM grades g
+      JOIN courses c ON g.course_id = c.id
+      GROUP BY c.course_code, g.grade
+      ORDER BY c.course_code, g.grade
+    ''');
+    
+    Map<String, Map<String, int>> result = {};
+    
+    for (var map in maps) {
+      final courseCode = _safeCast<String>(map['course_code'], 'Unknown');
+      final grade = _safeCast<String>(map['grade'], '');
+      final count = _safeCast<int>(map['count'], 0);
+      
+      if (!result.containsKey(courseCode)) {
+        result[courseCode] = {};
+      }
+      result[courseCode]![grade] = count;
+    }
+    
+    return result;
   }
 
   // Close database

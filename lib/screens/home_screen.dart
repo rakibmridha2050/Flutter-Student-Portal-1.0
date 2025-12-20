@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:schoolportal/main.dart';
 import 'student_screen.dart';
 import 'course_screen.dart';
 import 'enrollment_screen.dart';
@@ -127,10 +128,22 @@ class _HomeScreenState extends State<HomeScreen> {
                     () => _navigateTo(EnrollmentScreen()),
                   ),
                   _buildActionCard(
-                    'View Grades',
+                    'View Grades (Student)',
                     Icons.grade,
                     Colors.purple,
-                    () => _navigateTo(GradesScreen()),
+                    () {
+                      MockUser.setAsStudent();
+                      _navigateTo(GradesScreen(courseId: 2,));
+                    },
+                  ),
+                  _buildActionCard(
+                    'Grade Students (Instructor)',
+                    Icons.edit,
+                    Colors.blue,
+                    () {
+                      MockUser.setAsInstructor();
+                      _navigateTo(GradesScreen(courseId: 1,));
+                    },
                   ),
                 ],
               ),
