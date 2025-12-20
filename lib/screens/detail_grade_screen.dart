@@ -181,8 +181,6 @@ class _CourseGradeDetailScreenState extends State<CourseGradeDetailScreen> {
     );
   }
 
-
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
