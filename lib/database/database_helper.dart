@@ -16,7 +16,7 @@ class DatabaseHelper {
 
   Future<Database> _initDatabase() async {
     String path = join(await getDatabasesPath(), 'college_erp.db');
-    return await openDatabase(path, version: 1, onCreate: _onCreate);
+    return await openDatabase(path, version: 2, onCreate: _onCreate);
   }
 
   Future<void> _onCreate(Database db, int version) async {
@@ -77,6 +77,21 @@ class DatabaseHelper {
         FOREIGN KEY (course_id) REFERENCES courses (id)
       )
     ''');
+
+    await db.execute('''
+    CREATE TABLE attendance(
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      student_id INTEGER NOT NULL,
+      course_id INTEGER NOT NULL,
+      date TEXT NOT NULL,
+      status TEXT NOT NULL,
+      remarks TEXT,
+      created_at TEXT,
+      FOREIGN KEY (student_id) REFERENCES students (id),
+      FOREIGN KEY (course_id) REFERENCES courses (id),
+      UNIQUE(student_id, course_id, date)
+    )
+  ''');
   }
 
   Future<void> close() async {
@@ -297,4 +312,76 @@ class DatabaseHelper {
 
     return result.isNotEmpty ? result.first : {};
   }
+
+
+  // Add these methods to DatabaseHelper
+
+Future<List<Map<String, dynamic>>> getAttendanceForDate(String date, int courseId) async {
+  final db = await database;
+  return await db.rawQuery('''
+    SELECT a.*, s.name, s.student_id, s.roll_number
+    FROM attendance a
+    JOIN students s ON a.student_id = s.id
+    WHERE a.date = ? AND a.course_id = ?
+    ORDER BY s.roll_number
+  ''', [date, courseId]);
+}
+
+Future<void> saveAttendance(List<Map<String, dynamic>> attendanceRecords) async {
+  final db = await database;
+  final batch = db.batch();
+  
+  for (var record in attendanceRecords) {
+    // Check if attendance already exists
+    final existing = await db.query(
+      'attendance',
+      where: 'student_id = ? AND course_id = ? AND date = ?',
+      whereArgs: [record['student_id'], record['course_id'], record['date']],
+    );
+    
+    if (existing.isNotEmpty) {
+      // Update existing
+      batch.update(
+        'attendance',
+        {
+          'status': record['status'],
+          'remarks': record['remarks'],
+          'created_at': DateTime.now().toIso8601String(),
+        },
+        where: 'id = ?',
+        whereArgs: [existing.first['id']],
+      );
+    } else {
+      // Insert new
+      batch.insert('attendance', {
+        'student_id': record['student_id'],
+        'course_id': record['course_id'],
+        'date': record['date'],
+        'status': record['status'],
+        'remarks': record['remarks'],
+        'created_at': DateTime.now().toIso8601String(),
+      });
+    }
+  }
+  
+  await batch.commit(noResult: true);
+}
+
+// Add this to get classes (courses as classes)
+Future<List<Map<String, dynamic>>> getClasses() async {
+  final db = await database;
+  return await db.query('courses', orderBy: 'course_code');
+}
+
+// Add this to get students by class/course
+Future<List<Map<String, dynamic>>> getStudentsByCourse(int courseId) async {
+  final db = await database;
+  return await db.rawQuery('''
+    SELECT s.*
+    FROM students s
+    JOIN enrollments e ON s.id = e.student_id
+    WHERE e.course_id = ? AND e.status = 'enrolled'
+    ORDER BY s.roll_number ASC
+  ''', [courseId]);
+}
 }
